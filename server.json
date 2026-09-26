@@ -1,0 +1,47 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.brydge-ai/brydge",
+  "title": "BRYDGE",
+  "description": "Checks whether an agent's actions actually happened, against the destination's own records.",
+  "websiteUrl": "https://www.brydge-ai.com",
+  "repository": {
+    "url": "https://github.com/contactkontey-dotcom/brydge-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "brydge-mcp",
+      "version": "0.1.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "BRYDGE_API_KEY",
+          "description": "Your BRYDGE API key. It starts with brydge_sk_; issue one in BRYDGE on the Connect page.",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "BRYDGE_ACTOR",
+          "description": "The name BRYDGE knows this agent by, such as agent:refund-ops. Mandates are issued to this name.",
+          "isRequired": true,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "BRYDGE_URL",
+          "description": "Where BRYDGE runs. Leave it unset for BRYDGE's hosted service.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string",
+          "default": "https://www.brydge-ai.com"
+        }
+      ]
+    }
+  ]
+}

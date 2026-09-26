@@ -1,0 +1,71 @@
+{
+  "name": "brydge-mcp",
+  "version": "0.1.0",
+  "mcpName": "com.brydge-ai/brydge",
+  "description": "BRYDGE as an MCP server: an agent asks before it acts, then checks against the destination system's own records whether the work actually happened.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "agents",
+    "verification",
+    "supervision",
+    "brydge"
+  ],
+  "homepage": "https://github.com/contactkontey-dotcom/brydge-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/contactkontey-dotcom/brydge-mcp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/contactkontey-dotcom/brydge-mcp.git"
+  },
+  "license": "MIT",
+  "author": "BRYDGE",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "brydge-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run tests/unit",
+    "test:int": "vitest run tests/integration",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.1.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.1.0",
+    "@types/node": "^22.20.4",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.2"
+  }
+}

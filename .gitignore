@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tgz
+.env
+.env.*
+!.env.example
+
+# Registry publishing: the login token, the publisher binary and the domain key
+# stay out of the repository.
+.mcpregistry_*
+mcp-publisher
+mcp-publisher.exe
+*.pem
