@@ -1,4 +1,7 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
@@ -17,8 +20,27 @@ const cli = fileURLToPath(new URL("../../dist/cli.js", import.meta.url));
 const brydge = fakeBrydge();
 let http: Awaited<ReturnType<typeof serveOverHttp>>;
 
+/**
+ * `npm run build`, without launching npm.
+ *
+ * On Windows npm is `npm.cmd`, which only a shell can start: `execFileSync("npm")`
+ * fails there with ENOENT. The build script is tsup, and tsup's CLI is a plain
+ * JavaScript file, so the Node binary running these tests runs it directly, the
+ * same way on every platform.
+ */
+function build(): void {
+  const { scripts } = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { scripts: Record<string, string> };
+  if (scripts.build !== "tsup") {
+    throw new Error(`The build script is now "${scripts.build}"; update build() in this file to run it.`);
+  }
+  const require = createRequire(import.meta.url);
+  const manifest = require.resolve("tsup/package.json");
+  const { bin } = require(manifest) as { bin: Record<string, string> };
+  execFileSync(process.execPath, [join(dirname(manifest), bin.tsup!)], { cwd: root, stdio: "pipe" });
+}
+
 beforeAll(async () => {
-  execFileSync("npm", ["run", "build"], { cwd: root, stdio: "ignore" });
+  build();
   http = await serveOverHttp(brydge.fetcher);
 });
 afterAll(async () => {
@@ -29,7 +51,9 @@ const spawnWith = (mode: "legacy" | "auto") => {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [cli],
-    env: { BRYDGE_API_KEY: "brydge_sk_stdio_test", BRYDGE_ACTOR: "agent:stdio", BRYDGE_URL: http.url, PATH: process.env.PATH ?? "" },
+    /* The SDK adds the platform's safe defaults (SYSTEMROOT and PATHEXT on Windows,
+     * HOME and PATH elsewhere); only BRYDGE's settings are the test's to give. */
+    env: { BRYDGE_API_KEY: "brydge_sk_stdio_test", BRYDGE_ACTOR: "agent:stdio", BRYDGE_URL: http.url },
     stderr: "pipe",
   });
   const client = new Client({ name: "stdio-test", version: "1.0.0" }, mode === "auto" ? { versionNegotiation: { mode: "auto" } } : {});
@@ -69,7 +93,7 @@ describe("the brydge-mcp command", () => {
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [cli],
-      env: { PATH: process.env.PATH ?? "" },
+      env: {},
       stderr: "pipe",
     });
     let stderr = "";

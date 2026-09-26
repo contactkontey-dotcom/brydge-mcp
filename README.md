@@ -46,6 +46,23 @@ Most clients take this configuration (Claude Desktop, Cursor, Windsurf and other
 }
 ```
 
+On Windows, `npx` is a `.cmd` file, and only clients that start commands through a shell or through the MCP SDK can launch it by name. If your client reports `spawn npx ENOENT`, start it through the command shell instead:
+
+```json
+{
+  "mcpServers": {
+    "brydge": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "brydge-mcp"],
+      "env": {
+        "BRYDGE_API_KEY": "brydge_sk_...",
+        "BRYDGE_ACTOR": "agent:refund-ops"
+      }
+    }
+  }
+}
+```
+
 In Claude Code:
 
 ```bash
