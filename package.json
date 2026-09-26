@@ -1,6 +1,6 @@
 {
   "name": "brydge-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "mcpName": "com.brydge-ai/brydge",
   "description": "BRYDGE as an MCP server: an agent asks before it acts, then checks against the destination system's own records whether the work actually happened.",
   "keywords": [

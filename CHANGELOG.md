@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- `--version` and `--help` always print. They exited straight after printing, which could lose the output where writes to a pipe or terminal are asynchronous; now Node finishes writing before it exits.
+- The README shows how to start the server through `cmd /c` on Windows, for clients that cannot start `npx` by name.
+- The test suite runs on Windows, and CI tests Windows and Linux on Node 20, 22 and 24.
+
 ## 0.1.0
 
 First release.
