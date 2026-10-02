@@ -2,7 +2,7 @@ import { Client, InMemoryTransport, StreamableHTTPClientTransport } from "@model
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { createBrydgeServer, INSTRUCTIONS, VERSION, type BrydgeServerConfig } from "../../src/index.js";
-import { fakeBrydge } from "./fake-brydge.js";
+import { ASK_AGAIN, fakeBrydge } from "./fake-brydge.js";
 
 /*
  * The server, driven by the SDK's own MCP client, in both protocol eras:
@@ -106,6 +106,7 @@ describe.each<Era>(["modern", "legacy"])("over the %s protocol", (era) => {
       because: "Within mandate mdt_1.",
       unobserved: [],
       replayed: false,
+      settled: null,
     });
     expect(text(result)[0]).toMatch(/^ALLOWED\. Authorization: sup_1\. Carry the action out and write this id/);
     expect(JSON.parse(text(result)[1]!)).toEqual(result.structuredContent);
@@ -127,7 +128,45 @@ describe.each<Era>(["modern", "legacy"])("over the %s protocol", (era) => {
     expect(result.structuredContent).toMatchObject({ decision: "ESCALATED", authorization: "sup_1", unobserved: ["amount"] });
     expect(text(result)[0]).toBe(
       "ESCALATED. Do not carry this out: a person decides. No mandate covers refund for this agent. " +
-        "BRYDGE was not told: amount. Authorization: sup_1.",
+        `BRYDGE was not told: amount. ${ASK_AGAIN} Authorization: sup_1.`,
+    );
+  });
+
+  it("gives the model a person's answer when it asks again under the same idempotency_key", async () => {
+    const brydge = fakeBrydge({ decide: () => "ESCALATED" });
+    const client = await connect(era, configured(brydge));
+    const ask = () =>
+      client.callTool({
+        name: "brydge_supervise",
+        arguments: { action: "refund", target: "ch_1", facts: { amount: 4200 }, idempotency_key: "refund:ch_1" },
+      });
+    const waiting = await ask();
+    expect(waiting.structuredContent).toMatchObject({ decision: "ESCALATED", settled: null });
+    expect(text(waiting)[0]).toMatch(/^ESCALATED\. Do not carry this out: a person decides\./);
+
+    brydge.settle("sup_1", "ALLOWED");
+    const allowed = await ask();
+    expect(allowed.structuredContent).toMatchObject({ authorization: "sup_1", decision: "ALLOWED", settled: "ALLOWED", replayed: true });
+    expect(text(allowed)[0]).toBe(
+      "ALLOWED. Authorization: sup_1. Carry the action out and write this id into the record it creates, where the " +
+        "destination keeps it. Authorised by maya, who allowed this one on 2026-10-02. Carry it out once. " +
+        "BRYDGE has answered this same request before: if you already carried it out, do not do it again.",
+    );
+  });
+
+  it("tells the model plainly when a person refused, and not that a person is still deciding", async () => {
+    const brydge = fakeBrydge({ decide: () => "ESCALATED" });
+    const client = await connect(era, configured(brydge));
+    const ask = () =>
+      client.callTool({ name: "brydge_supervise", arguments: { action: "refund", target: "ch_1", idempotency_key: "refund:ch_1" } });
+    await ask();
+    brydge.settle("sup_1", "REFUSED", "sam@example.com");
+    const refused = await ask();
+    expect(refused.isError).toBeFalsy();
+    expect(refused.structuredContent).toMatchObject({ decision: "ESCALATED", settled: "REFUSED" });
+    expect(text(refused)[0]).toBe(
+      "REFUSED. A person refused this: do not carry it out. sam@example.com refused this on 2026-10-02, so it " +
+        "must not be carried out. Authorization: sup_1.",
     );
   });
 

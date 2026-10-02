@@ -3,7 +3,7 @@ import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { BrydgeClient, DEFAULT_BASE_URL } from "./client.js";
 import { BrydgeError } from "./errors.js";
-import type { Facts, Verification } from "./types.js";
+import type { Facts, Supervision, Verification } from "./types.js";
 import { VERSION } from "./version.js";
 
 export interface BrydgeServerConfig {
@@ -27,7 +27,9 @@ export const INSTRUCTIONS = [
   "1. Before an action that changes something in another system (a refund, a payment, a ticket), call brydge_supervise.",
   "2. If it is ALLOWED, carry the action out and write the authorization id into the record the action creates, " +
     "where the destination keeps it (for a Stripe refund: metadata.brydge_authorization). BRYDGE finds the work by that id. " +
-    "If it is ESCALATED, do not carry it out: a person decides.",
+    "If it is ESCALATED, do not carry it out: a person decides. Once they have answered, call brydge_supervise " +
+    "again with the same idempotency_key and the same details: ALLOWED then means they allowed it. " +
+    "If BRYDGE returns an authorization you have already carried out, do not carry it out again.",
   "3. After acting, call brydge_report_outcome with what you believe happened.",
   "4. Before you tell anyone the work is done, call brydge_verify. Only VERIFIED means it happened as permitted.",
 ].join("\n");
@@ -86,7 +88,8 @@ export function createBrydgeServer(config: BrydgeServerConfig): McpServer {
       description:
         "Ask BRYDGE whether you may take an action, before you take it. ALLOWED returns an authorization id: " +
         "carry the action out and write that id into the record it creates, where the destination keeps it " +
-        "(for a Stripe refund: metadata.brydge_authorization). ESCALATED means a person decides: do not carry it out.",
+        "(for a Stripe refund: metadata.brydge_authorization). ESCALATED means a person decides: do not carry it out, " +
+        "and once they have answered, ask again with the same idempotency_key and details to get their answer.",
       inputSchema: z.object({
         action: z.string().min(1).max(120).describe("The kind of work, as it is set up in BRYDGE, such as refund."),
         target: z.string().min(1).max(400).describe("What the work acts on: the charge, order or ticket id."),
@@ -102,8 +105,8 @@ export function createBrydgeServer(config: BrydgeServerConfig): McpServer {
           .min(1)
           .max(200)
           .describe(
-            "A name for this one intended action, such as refund:ch_123. Send the same value if you retry " +
-              "the same action; never reuse it for a different one.",
+            "A name for this one intended action, such as refund:ch_123. Send the same value whenever you ask " +
+              "about the same action again, on a retry or once a person has answered; never reuse it for a different one.",
           ),
       }),
       outputSchema: z.object({
@@ -112,6 +115,7 @@ export function createBrydgeServer(config: BrydgeServerConfig): McpServer {
         because: z.string(),
         unobserved: z.array(z.string()),
         replayed: z.boolean(),
+        settled: z.enum(["ALLOWED", "REFUSED"]).nullable(),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
@@ -128,15 +132,9 @@ export function createBrydgeServer(config: BrydgeServerConfig): McpServer {
           because: supervision.because,
           unobserved: supervision.unobserved,
           replayed: supervision.replayed,
+          settled: supervision.settled ?? null,
         };
-        const summary =
-          supervision.decision === "ALLOWED"
-            ? `ALLOWED. Authorization: ${supervision.id}. Carry the action out and write this id into the record ` +
-              `it creates, where the destination keeps it. ${supervision.because}`
-            : `ESCALATED. Do not carry this out: a person decides. ${supervision.because}` +
-              (supervision.unobserved.length > 0 ? ` BRYDGE was not told: ${supervision.unobserved.join(", ")}.` : "") +
-              ` Authorization: ${supervision.id}.`;
-        return result(summary, output);
+        return result(supervised(supervision), output);
       }),
   );
 
@@ -293,6 +291,45 @@ function keyFor(actor: string, action: string, target: string, facts: Facts, nam
     named,
   ]);
   return `mcp:${createHash("sha256").update(asked).digest("hex").slice(0, 48)}`;
+}
+
+/** What the model is told about BRYDGE's answer. */
+function supervised(supervision: Supervision): string {
+  const cite = `Authorization: ${supervision.id}.`;
+  if (supervision.decision === "ALLOWED") {
+    return [
+      `ALLOWED. ${cite} Carry the action out and write this id into the record it creates, where the destination keeps it.`,
+      sentence(supervision.because),
+      supervision.replayed ? "BRYDGE has answered this same request before: if you already carried it out, do not do it again." : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (supervision.settled === "REFUSED") {
+    return ["REFUSED. A person refused this: do not carry it out.", sentence(supervision.because), cite].filter(Boolean).join(" ");
+  }
+  /* BRYDGE ends an unanswered escalation with what to do next; it goes last, after what BRYDGE was not told. */
+  const next = supervision.next?.trim();
+  const because =
+    next && supervision.because.endsWith(next) ? supervision.because.slice(0, -next.length) : supervision.because;
+  return [
+    "ESCALATED. Do not carry this out: a person decides.",
+    sentence(because),
+    supervision.unobserved.length > 0 ? `BRYDGE was not told: ${supervision.unobserved.join(", ")}.` : "",
+    next ?? "",
+    cite,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** BRYDGE's reason as a sentence of its own: a capital, a full stop, or nothing at all. */
+function sentence(text: string): string {
+  const trimmed = text.trim().replace(/\s*\.+$/, ".");
+  if (trimmed === "" || trimmed === ".") return "";
+  /* A plain first word takes a capital; a name or an id, such as a person's email, stays as it was given. */
+  const capital = /^[a-z]+(?![\w@.:-])/.test(trimmed) ? trimmed.charAt(0).toUpperCase() + trimmed.slice(1) : trimmed;
+  return /[.!?]$/.test(capital) ? capital : `${capital}.`;
 }
 
 function found(verification: Verification): CallToolResult {

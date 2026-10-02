@@ -82,6 +82,8 @@ export class BrydgeClient {
       checked: Array.isArray(answer.checked) ? (answer.checked as Supervision["checked"]) : [],
       unobserved: Array.isArray(answer.unobserved) ? answer.unobserved.filter((f): f is string => typeof f === "string") : [],
       replayed: answer.replayed === true,
+      settled: answer.settled === "ALLOWED" || answer.settled === "REFUSED" ? answer.settled : null,
+      next: typeof answer.next === "string" && answer.next.length > 0 ? answer.next : null,
     };
   }
 

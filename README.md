@@ -8,7 +8,7 @@ This is [BRYDGE](https://www.brydge-ai.com) as an MCP server. Before an agent ac
 
 | Tool | What it does |
 | --- | --- |
-| `brydge_supervise` | Asks before acting. `ALLOWED` returns an authorization id for the agent to write into the record the action creates. `ESCALATED` means a person decides, and the agent must not act. |
+| `brydge_supervise` | Asks before acting. `ALLOWED` returns an authorization id for the agent to write into the record the action creates. `ESCALATED` means a person decides, and the agent must not act; asked again with the same `idempotency_key`, it returns their answer. |
 | `brydge_report_outcome` | Reports what the agent believes happened. |
 | `brydge_verify` | Reads the destination's records now and says whether the work happened. |
 | `brydge_get_finding` | Returns what BRYDGE has found so far, without reading the records again. Free. |
@@ -23,7 +23,7 @@ Do these once, in BRYDGE:
 1. **Issue an API key** on the Connect page.
 2. **Declare what the action is worth.** BRYDGE charges a share of that value, and it will not check an action nobody has priced.
 3. **Register a destination** for the action: where BRYDGE reads the records, and the read-only credential it uses. BRYDGE has a preset for Stripe refunds.
-4. **Issue a mandate** to the agent for the action. Without one, every call goes to a person.
+4. **Issue a mandate** to the agent for the action, on the agent's page in BRYDGE. Without one, every call goes to a person, and the agent acts only once they allow it (see [When a person decides](#when-a-person-decides)).
 
 A mandate says what the agent may do; headroom says how much of it, in any 24 hours. A new agent starts with room for one action a day, and every report BRYDGE checks and finds true raises that.
 
@@ -84,7 +84,27 @@ The agent's name comes from this configuration, never from the model, so an agen
 3. **Report.** The agent calls `brydge_report_outcome` with what it believes happened.
 4. **Verify.** Before saying the work is done, the agent calls `brydge_verify`.
 
-`brydge_supervise` takes an `idempotency_key`, a name for one intended action such as `refund:ch_123`. Retrying with the same key gets the same answer. A key reused for a different action never gets another action's answer, because the server also hashes in what is being asked.
+`brydge_supervise` takes an `idempotency_key`, a name for one intended action such as `refund:ch_123`. Asking again with the same key and the same details is the same request: a retry gets the same answer, and once a person has answered an escalated one, it gets their answer. A key reused for a different action never gets another action's answer, because the server also hashes in what is being asked.
+
+## When a person decides
+
+An escalated action waits for a person, in BRYDGE. The server does not wait with it: the model is told not to act, and to ask again once they have answered:
+
+```text
+ESCALATED. Do not carry this out: a person decides. No mandate lets agent:refund-ops refund yet, so a person decides. A person has been asked. Ask again with the same idempotency key once they have answered: if they allow it, the answer is ALLOWED. Authorization: cmurkt5mw000i7dev66vu5afm.
+```
+
+When the model calls `brydge_supervise` again with the same `idempotency_key`, action, target and facts, BRYDGE answers with the person's decision:
+
+| The person | `decision` | `settled` | The model is told |
+| --- | --- | --- | --- |
+| has not answered yet | `ESCALATED` | `null` | Do not act yet; ask again once they have answered. The person is not asked twice. |
+| allowed it | `ALLOWED` | `"ALLOWED"` | Carry it out, citing the same authorization. |
+| refused it | `ESCALATED` | `"REFUSED"` | `REFUSED. A person refused this: do not carry it out.`, with their reason. |
+
+A request with different details is a different action, so allowing a £42 refund never lets the agent refund £420.
+
+Each authorization is for one action. A retry of an action already carried out gets the same `ALLOWED` back, and the model is told that if it already carried the action out, it must not do it again. If an action does run twice under one authorization, a check reports `MISMATCH` with `DUPLICATE_EXECUTION`.
 
 ## What a check can find
 
@@ -105,7 +125,8 @@ The server speaks MCP over stdio. It serves clients on the 2026-07-28 revision a
 ## Limits
 
 - BRYDGE treats a target as one piece of work. A second record for the same target that carries a different authorization, such as a second partial refund of one charge, is reported as a `MISMATCH`.
-- The server does not wait for a person. An escalated action ends with the model being told a person decides, and a later request is decided afresh.
+- The server does not wait for a person. An escalated action ends with the model being told a person decides, and their answer reaches the agent only when the model asks again with the same `idempotency_key` and the same details. A request under a new key is decided afresh.
+- The server does not see the action itself, so it cannot stop a second one. Whether an action was already carried out is for the model to remember; the server tells it when BRYDGE has answered the same request before.
 
 ## Development
 
